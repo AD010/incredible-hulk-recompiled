@@ -1,0 +1,18 @@
+# Never commit anything from the game: the disc image, its files, the loaded image or the code made from it.
+/Game Files/
+/game/
+/generated/default/
+/runs/
+*.iso
+*.xex
+image.bin
+
+# Build output and SDKs (tools/build_sdk.bat makes sdk-src's install folder)
+/out/
+/sdk/
+/sdk-src/
+/tools/bgwin/*.exe
+/tools/bgwin/*.log
+
+# The playbook is read, not built
+/third_party/playbook/
