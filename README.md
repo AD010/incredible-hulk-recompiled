@@ -10,8 +10,9 @@
 > * **You cannot finish the game with it.** Expect bugs, crashes and missing features.
 > * **TRG Launcher is built in, but optional.** The game runs on its own, and a fork can keep the launcher, change
 >   it or drop it.
-> * **It is free for anyone to use.** Fork it, change it, ship it, rename it: do whatever you want with the code
->   (see [LICENSE](LICENSE)).
+> * **It is free for anyone to use, with credit.** Fork it, change it, ship it, rename it. All we ask in return is
+>   credit: keep the [LICENSE](LICENSE) with its copyright line, and name TekRantGaming in your README (see
+>   **Credit** below).
 >
 > No support is offered here. Take it and make it yours.
 
@@ -156,10 +157,17 @@ The playbook's release chapters (updater, antivirus, crash reports) apply:
 * [TRG Launcher](https://github.com/TekRantGaming/trg-launcher) by TekRantGaming.
 * Game art in the launcher comes from [SteamGridDB](https://www.steamgriddb.com) (game 1214) when it runs.
 
+## Credit
+
+If you fork this or build on it, credit the original work in your project's README, for example:
+
+> Based on [The Incredible Hulk Recompiled](https://github.com/TekRantGaming) by TekRantGaming.
+
 ## Licence
 
-This project's own code is released into the public domain under [the Unlicense](LICENSE): use it for anything,
-with or without credit. The parts it uses keep their own licences: TRG Launcher is MIT licensed, and the ReXGlue
-SDK and the libraries it builds have theirs.
+This project's own code is under the [MIT licence](LICENSE), Copyright (c) 2026 TekRantGaming. You may use, change
+and share it for anything, as long as the copyright line and the licence text stay with every copy, including
+forks and builds you hand out. The parts it uses keep their own licences: TRG Launcher is MIT licensed, and the
+ReXGlue SDK and the libraries it builds have theirs.
 
 The Incredible Hulk is a trademark of Marvel. This project is not affiliated with Marvel, Sega or Edge of Reality.
