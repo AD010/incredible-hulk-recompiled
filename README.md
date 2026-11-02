@@ -168,6 +168,7 @@ If you fork this or build on it, credit the original work in your project's READ
 This project's own code is under the [MIT licence](LICENSE), Copyright (c) 2026 TekRantGaming. You may use, change
 and share it for anything, as long as the copyright line and the licence text stay with every copy, including
 forks and builds you hand out. The parts it uses keep their own licences: TRG Launcher is MIT licensed, and the
-ReXGlue SDK and the libraries it builds have theirs.
+ReXGlue SDK and the libraries it builds have theirs. The Incredible Hulk game and its files are not part of this
+repository and are not covered.
 
 The Incredible Hulk is a trademark of Marvel. This project is not affiliated with Marvel, Sega or Edge of Reality.
