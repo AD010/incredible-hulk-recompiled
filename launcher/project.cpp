@@ -16,8 +16,9 @@ trg::hub::ProjectConfig Hulk() {
   p.id = "hulk";
   p.version = PROJECT_VERSION;  // from launcher/CMakeLists.txt
   p.home_line = "";
-  p.about = "A native PC recompilation of the Xbox 360 game The Incredible Hulk, made with ReXGlue. "
-            "It needs your own disc.";
+  p.about = "A community head start: a native PC recompilation of the Xbox 360 game The Incredible Hulk, made with "
+            "ReXGlue, for anyone to fork and carry on. It is not a release: it is untested, the game cannot be "
+            "finished with it, and there will be bugs. It needs your own disc.";
   p.made_by = "Edge of Reality for Sega, 2008";
   p.region = "USA (NTSC)";
   p.logo_png = kHulkLogoPng;

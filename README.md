@@ -1,9 +1,23 @@
 # The Incredible Hulk Recompiled
 
+> **A head start for the community, not a release.**
+>
+> Members of the community asked TekRantGaming for help with a PC port of The Incredible Hulk. This repository is
+> that help: a working base to fork and build your own project on. It was never meant for a public release and it
+> is not a TekRantGaming (TRG) mainline project.
+>
+> * **It is not tested or verified.** It boots and reaches the first mission, and that is all anyone has seen.
+> * **You cannot finish the game with it.** Expect bugs, crashes and missing features.
+> * **TRG Launcher is built in, but optional.** The game runs on its own, and a fork can keep the launcher, change
+>   it or drop it.
+> * **It is free for anyone to use.** Fork it, change it, ship it, rename it: do whatever you want with the code
+>   (see [LICENSE](LICENSE)).
+>
+> No support is offered here. Take it and make it yours.
+
 A native PC recompilation of the Xbox 360 game **The Incredible Hulk** (Edge of Reality for Sega, 2008), made with
-[ReXGlue](https://github.com/rexglue/rexglue-sdk) and started from
-[TRG Launcher 2.0](https://github.com/TekRantGaming/trg-launcher). It is a starting point for others to fork and
-carry on: see **Status** for where it stands.
+[ReXGlue](https://github.com/rexglue/rexglue-sdk) and set up with
+[TRG Launcher 2.0](https://github.com/TekRantGaming/trg-launcher). See **Status** for exactly how far it gets.
 
 You need your own copy of the game. Nothing from the game is in this repository: no disc image, no game files and
 none of the code made from them. Each person makes those from their own disc with the steps below.
@@ -124,7 +138,13 @@ The game side of TRG Launcher 2.0 is in `src/launcher` (setting prefix `hulk_`, 
 The launcher rows for the frame rate limiter, upscaler modes, controller options and achievement pop up are off in
 `launcher/project.cpp` until their game side hooks are written (see trg-launcher's `launcher2/game_side`).
 
-## Before a public release
+**Without the launcher:** start `incredible_hulk.exe` yourself (see **Running**); the launcher is never needed. To
+take it out of a fork completely, delete `launcher/`, `third_party/trg-launcher` (and its entry in `.gitmodules`),
+`tools/build_launcher.bat`, and `return_to_launcher.cpp` and `game_window.cpp` from `src/launcher` and
+`CMakeLists.txt`, then remove the two calls to them in `input_hook.cpp`. Keep the rest of `input_hook.cpp`: its lock
+and the zeroed state on a failed read help the game with or without a launcher.
+
+## If you publish your own fork
 
 `launcher/project.cpp` has an empty `repo` (no updates until it is set), no Discord link and no Add to Steam art.
 The playbook's release chapters (updater, antivirus, crash reports) apply:
@@ -135,5 +155,11 @@ The playbook's release chapters (updater, antivirus, crash reports) apply:
 * [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) and the projects it builds on.
 * [TRG Launcher](https://github.com/TekRantGaming/trg-launcher) by TekRantGaming.
 * Game art in the launcher comes from [SteamGridDB](https://www.steamgriddb.com) (game 1214) when it runs.
+
+## Licence
+
+This project's own code is released into the public domain under [the Unlicense](LICENSE): use it for anything,
+with or without credit. The parts it uses keep their own licences: TRG Launcher is MIT licensed, and the ReXGlue
+SDK and the libraries it builds have theirs.
 
 The Incredible Hulk is a trademark of Marvel. This project is not affiliated with Marvel, Sega or Edge of Reality.
