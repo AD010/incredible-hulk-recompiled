@@ -161,7 +161,7 @@ The playbook's release chapters (updater, antivirus, crash reports) apply:
 
 If you fork this or build on it, credit the original work in your project's README, for example:
 
-> Based on [The Incredible Hulk Recompiled](https://github.com/TekRantGaming) by TekRantGaming.
+> Based on [The Incredible Hulk Recompiled](https://github.com/TekRantGaming/incredible-hulk-recompiled) by TekRantGaming.
 
 ## Licence
 
