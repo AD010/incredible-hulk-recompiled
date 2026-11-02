@@ -26,7 +26,7 @@ trg::hub::ProjectConfig Hulk() {
 
   // The copy the port was made with: the redump image's hashes, and default.xex's version and media ID.
   GameInfo hulk = {
-      "incredible_hulk", "The Incredible Hulk", "incredible_hulk.exe", "IncredibleHulk", 0x534507F1,
+      "incredible_hulk", "The Incredible Hulk", "incredible_hulk.exe", "IncredibleHulkGame", 0x534507F1,
       ImVec4(0.46f, 0.77f, 0.20f, 1.0f), "Smash your way across New York.", InstallSource::kDisc,
       // SteamGridDB game 1214 (The Incredible Hulk: The Official Videogame), its highest scored grid, hero and logo.
       // Other grids: grid/869611d6f368d567d107a7dc9a96c3c8.png, grid/add4ec2c53b48e04934ed783dc259013.png

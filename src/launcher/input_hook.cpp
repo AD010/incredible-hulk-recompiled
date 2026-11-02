@@ -18,7 +18,8 @@
 // XINPUT_STATE (big endian): +0 packet number, +4 buttons, +6 left trigger, +7 right trigger, +8/+10 left stick,
 // +12/+14 right stick.
 //
-// Developer aid: HULK_DEV_PAD scripts controller 1 for test runs, with no real pad and without the window in front.
+// Developer aid, not in release builds (HULK_DEV_TOOLS): HULK_DEV_PAD scripts controller 1 for test runs, with no
+// real pad and without the window in front.
 // A list of <button>@<seconds>, counted from the first pad read, each held for a fifth of a second:
 //   HULK_DEV_PAD=start@75,a@80,down@83,a@85
 // Buttons: a b x y lb rb start back up down left right ls rs. Slot 0 then reads as connected.
@@ -65,6 +66,9 @@ uint16_t ButtonMask(const std::string& name) {
 
 const std::vector<DevPress>* DevPad() {
   static const std::vector<DevPress>* script = [] () -> const std::vector<DevPress>* {
+#if !defined(HULK_DEV_TOOLS)
+    return nullptr;  // release builds: no developer pad
+#endif
     const char* env = std::getenv("HULK_DEV_PAD");
     if (!env || !*env) return nullptr;
     auto* out = new std::vector<DevPress>;

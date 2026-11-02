@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(hulk_launcher LANGUAGES C CXX)
 
-set(HULK_LAUNCHER_VERSION 0.1.0)
+set(HULK_LAUNCHER_VERSION 0.0.1)
 string(REPLACE "." "," _commas "${HULK_LAUNCHER_VERSION}")
 
 # The launcher runs on its own: the C runtime is linked in.

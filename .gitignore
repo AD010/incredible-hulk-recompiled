@@ -16,3 +16,5 @@ image.bin
 
 # The playbook is read, not built
 /third_party/playbook/
+/dist/
+/release-maps/
