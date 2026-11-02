@@ -32,7 +32,8 @@ NVIDIA RTX 4070 Ti, Direct3D 12. Linux, Vulkan, AMD and Intel are untested.
 
 ## Building
 
-All commands run from the repository folder.
+All commands run from the repository folder. TRG Launcher is a submodule: clone with `git clone --recursive`, or run
+`git submodule update --init` after cloning.
 
 1. **The SDK, from source.** The official ReXGlue 0.10.0 Windows zip's `rexruntime.dll` is flagged by about 20 of
    70 antivirus engines on VirusTotal (most likely false positives on an unsigned build, but players would get
