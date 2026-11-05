@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Checkout repository
@@ -16,32 +16,32 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    - name: Install LLVM/Clang
-      run: |
-        winget install --id LLVM.LLVM --silent --accept-package-agreements --accept-source-agreements
-        echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
+    - name: Configure Visual Studio C++ & Clang environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: amd64
 
-    - name: Download and Init ReXGlue SDK Submodules
+    - name: Run Windows Build Script
+      shell: pwsh
       run: |
-        if (!(Test-Path "thirdparty/rexglue-sdk")) {
-            mkdir thirdparty -Force
-            git clone https://github.com/rexglue/rexglue-sdk.git thirdparty/rexglue-sdk
+        $ErrorActionPreference = 'Stop'
+        $projectDir = "$PWD/Hulk_NativePC_Source_v0.4_NativeBridge"
+        if (!(Test-Path $projectDir)) {
+            $projectDir = "$PWD" # Если файлы распакованы прямо в корень
         }
-        cd thirdparty/rexglue-sdk
-        git submodule update --init --recursive
-        cd ../..
-
-    - name: Configure CMake with Ninja
-      run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
-
-    - name: Build Project
-      run: cmake --build build --parallel
+        
+        Set-Location $projectDir
+        if (Test-Path "BUILD_WINDOWS.ps1") {
+            ./BUILD_WINDOWS.ps1
+        } else {
+            throw "BUILD_WINDOWS.ps1 not found in $projectDir"
+        }
 
     - name: Upload Release Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: Hulk-NativePC-Release-v0.4
         path: |
-          build/**/*.exe
-          build/**/*.dll
-          *.toml
+          **/out/HULK_NATIVE_PC_TEST/**/*
+          **/out/**/*.exe
+          **/out/**/*.dll
