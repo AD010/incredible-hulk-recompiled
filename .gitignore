@@ -18,3 +18,7 @@ image.bin
 /third_party/playbook/
 /dist/
 /release-maps/
+
+/HULK_BUILD_LOG.txt
+/native_x_renderer_git/
+/out/HULK_NATIVE_PC_TEST/

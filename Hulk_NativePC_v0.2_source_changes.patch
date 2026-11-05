@@ -1,0 +1,658 @@
+--- a/.gitignore
++++ b/.gitignore
+@@ -17,4 +17,8 @@
+ # The playbook is read, not built
+ /third_party/playbook/
+ /dist/
+ /release-maps/
++
++/HULK_BUILD_LOG.txt
++/native_x_renderer_git/
++/out/HULK_NATIVE_PC_TEST/
+--- /dev/null
++++ b/BUILD_WINDOWS.cmd
+@@ -0,0 +1,23 @@
++@echo off
++setlocal EnableExtensions
++cd /d "%~dp0"
++set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
++if not exist "%VSWHERE%" (
++ echo ERROR: Visual Studio 2022 Build Tools with C++/LLVM are required.
++ echo Install Visual Studio Build Tools and the LLVM Clang toolset.
++ pause
++ exit /b 1
++)
++set "VSPATH="
++for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -property installationPath`) do set "VSPATH=%%i"
++if not defined VSPATH (echo ERROR: Visual Studio not found & pause & exit /b 1)
++call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul
++if errorlevel 1 (echo ERROR: vcvars64 failed & pause & exit /b 1)
++set "PATH=%VSPATH%\VC\Tools\Llvm\x64\bin;%PATH%"
++where clang++ >nul 2>&1
++if errorlevel 1 (echo ERROR: LLVM Clang is missing from VS installation & pause & exit /b 1)
++powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0BUILD_WINDOWS.ps1" %*
++set "RC=%errorlevel%"
++if not "%RC%"=="0" echo Build failed with code %RC%.
++pause
++exit /b %RC%
+--- /dev/null
++++ b/BUILD_WINDOWS.ps1
+@@ -0,0 +1,127 @@
++# Build Hulk Native PC from sources on Windows. Does NOT enable Vulkan drawing.
++# Usage: BUILD_WINDOWS.cmd -GameRoot "E:\Games\IncredibleHulk\games\incredible_hulk\game"
++param(
++  [string]$GameRoot = "",
++  [switch]$NativeXLink
++)
++Set-StrictMode -Version Latest
++$ErrorActionPreference = 'Stop'
++$Source = $PSScriptRoot
++$BuildLog = Join-Path $Source 'HULK_BUILD_LOG.txt'
++try { Start-Transcript -Path $BuildLog -Force | Out-Null } catch { Write-Warning 'Could not start build transcript' }
++function Require-Command([string]$name) {
++  if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
++    throw "Missing tool '$name'. Install Visual Studio C++, CMake, Ninja, Git and Python 3."
++  }
++}
++function Invoke-Checked([string]$exe, [string[]]$arguments, [string]$dir) {
++  Push-Location -LiteralPath $dir
++  try {
++    Write-Host ("RUN: " + $exe + " " + ($arguments -join ' '))
++    & $exe @arguments
++    if ($LASTEXITCODE -ne 0) { throw "Command failed ($LASTEXITCODE): $exe" }
++  } finally { Pop-Location }
++}
++try {
++  foreach ($cmd in @('git', 'cmake', 'ninja', 'clang++', 'python')) { Require-Command $cmd }
++  if (-not $GameRoot) {
++    $known = 'E:\Games\IncredibleHulk\games\incredible_hulk\game'
++    if (Test-Path (Join-Path $known 'default.xex')) { $GameRoot = $known }
++    elseif (Test-Path (Join-Path $Source 'game\default.xex')) { $GameRoot = Join-Path $Source 'game' }
++    else { $GameRoot = Read-Host 'Full path to installed game folder containing default.xex' }
++  }
++  $GameRoot = (Resolve-Path -LiteralPath $GameRoot).Path
++  $Xex = Join-Path $GameRoot 'default.xex'
++  if (-not (Test-Path -LiteralPath $Xex)) { throw "default.xex not found in '$GameRoot'" }
++  Write-Host "Game data: $GameRoot"
++
++  $LocalGame = Join-Path $Source 'game'
++  New-Item -ItemType Directory -Force -Path $LocalGame | Out-Null
++  $LocalXex = Join-Path $LocalGame 'default.xex'
++  if ($LocalXex -ne $Xex) { Copy-Item -LiteralPath $Xex -Destination $LocalXex -Force }
++  # The game data can stay at its installed path. Codegen only needs default.xex.
++
++  $Sdk = Join-Path $Source 'sdk-src'
++  if (-not (Test-Path (Join-Path $Sdk 'CMakeLists.txt'))) {
++    Invoke-Checked 'git' @('clone', '--branch', 'recomp', '--depth', '1', '--recurse-submodules',
++      'https://github.com/ElGuslml/rexglue-sdk.git', $Sdk) $Source
++  } else {
++    Write-Host 'Using existing sdk-src (no automatic upgrade).'
++    Invoke-Checked 'git' @('-C', $Sdk, 'submodule', 'update', '--init', '--recursive') $Source
++  }
++  # The SDK carries a couple of symlinks which Git on Windows may check out as text files.
++  Invoke-Checked 'python' @((Join-Path $Source 'tools\fix_symlinks.py'), $Sdk) $Source
++  Invoke-Checked 'cmake' @('--preset', 'win-amd64') $Sdk
++  Invoke-Checked 'cmake' @('--build', 'out/build/win-amd64', '--config', 'Release', '--target', 'install', '--parallel') $Sdk
++  $SdkInstall = Join-Path $Sdk 'out\install\win-amd64'
++  $Codegen = Join-Path $SdkInstall 'bin\rexglue.exe'
++  if (-not (Test-Path $Codegen)) { throw "SDK install did not produce $Codegen" }
++  Invoke-Checked $Codegen @('codegen', (Join-Path $Source 'incredible_hulk_manifest.toml')) $Source
++  if (-not (Test-Path (Join-Path $Source 'generated\default\sources.cmake'))) {
++    throw 'Codegen did not produce generated/default/sources.cmake; aborting before CMake configure.'
++  }
++  # Compile and run standalone input tests before the larger game build.
++  $TestDir = Join-Path $Source 'out\input-tests'
++  Invoke-Checked 'cmake' @('-S', (Join-Path $Source 'tests'), '-B', $TestDir, '-G', 'Ninja',
++    '-DCMAKE_CXX_COMPILER=clang++', '-DCMAKE_BUILD_TYPE=Release') $Source
++  Invoke-Checked 'cmake' @('--build', $TestDir, '--parallel') $Source
++  Invoke-Checked 'ctest' @('--test-dir', $TestDir, '--output-on-failure') $Source
++
++  $BuildDir = Join-Path $Source 'out\build\win-amd64-release'
++  $cmakeArgs = @('--preset', 'win-amd64-release', '-DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF')
++  if ($NativeXLink) {
++    # Linking does NOT enable Vulkan. No unverified XDK hooks are activated.
++    $NxrFull = Join-Path $Source 'native_x_renderer_git'
++    if (-not (Test-Path (Join-Path $NxrFull 'thirdparty\diligent-core\CMakeLists.txt'))) {
++      if (Test-Path $NxrFull) { throw "Incomplete renderer directory: $NxrFull (delete it to retry)" }
++      Invoke-Checked 'git' @('clone', '--depth', '1', '--recurse-submodules',
++        'https://github.com/ElGuslml/NativeXRenderer.git', $NxrFull) $Source
++    }
++    $cmakeArgs += @("-DREXSDK_DIR=$Sdk", '-DHULK_WITH_NATIVE_X=ON',
++      "-DHULK_NATIVE_X_SOURCE_DIR=$NxrFull")
++  } else {
++    $cmakeArgs += @("-DCMAKE_PREFIX_PATH=$SdkInstall", '-DHULK_WITH_NATIVE_X=OFF')
++  }
++  Invoke-Checked 'cmake' $cmakeArgs $Source
++  Invoke-Checked 'cmake' @('--build', $BuildDir, '--parallel') $Source
++  $exe = Join-Path $BuildDir 'incredible_hulk.exe'
++  if (-not (Test-Path $exe)) { throw "Build exited without producing $exe" }
++  $Deliver = Join-Path $Source 'out\HULK_NATIVE_PC_TEST'
++  if (Test-Path $Deliver) { Remove-Item -LiteralPath $Deliver -Recurse -Force }
++  New-Item -ItemType Directory -Force -Path $Deliver | Out-Null
++  Copy-Item $exe $Deliver -Force
++  foreach ($dll in @('rexruntime.dll','rexgpu-xenos.dll')) {
++    $candidates = @((Join-Path $BuildDir $dll), (Join-Path $SdkInstall "bin\$dll"))
++    $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
++    if (-not $found) { throw "Missing runtime DLL: $dll; check SDK installation" }
++    Copy-Item $found $Deliver -Force
++  }
++  # NativeX / SDK may copy additional DLL dependencies next to the built executable.
++  Get-ChildItem -LiteralPath $BuildDir -Filter '*.dll' -File -ErrorAction SilentlyContinue |
++    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $Deliver -Force }
++  $save = Join-Path $env:LOCALAPPDATA 'HulkNativePC\Saves'
++  $gameEscaped = $GameRoot.Replace("'", "''")
++  $run = @'
++$ErrorActionPreference = 'Stop'
++$exe = Join-Path $PSScriptRoot 'incredible_hulk.exe'
++$game = '__GAMEROOT__'
++$user = Join-Path $env:LOCALAPPDATA 'HulkNativePC\Saves'
++New-Item -ItemType Directory -Force -Path $user | Out-Null
++& $exe "--game_data_root=$game" "--user_data_root=$user" '--mnk_mode=false' '--hulk_native_mnk=true'
++'@
++  $run = $run.Replace('__GAMEROOT__', $gameEscaped)
++  Set-Content -LiteralPath (Join-Path $Deliver 'RUN_HULK_NATIVE.ps1') -Value $run -Encoding UTF8
++  $cmd = '@echo off' + "`r`n" + 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0RUN_HULK_NATIVE.ps1"' + "`r`n" + 'pause' + "`r`n"
++  [IO.File]::WriteAllText((Join-Path $Deliver 'RUN_HULK_NATIVE.cmd'), $cmd, [Text.Encoding]::ASCII)
++  Write-Host "SUCCESS: $Deliver"
++  if ($NativeXLink) { Write-Host 'NativeXRenderer was linked only; drawing still uses Xenos.' }
++  Write-Host 'Test by launching RUN_HULK_NATIVE.cmd; this build has not been game-tested.'
++  try { Stop-Transcript | Out-Null } catch {}
++  exit 0
++} catch {
++  Write-Host ("BUILD ERROR: " + $_.Exception.Message) -ForegroundColor Red
++  Write-Host ("Send this file for diagnosis: " + $BuildLog)
++  try { Stop-Transcript | Out-Null } catch {}
++  exit 1
++}
++
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -21,8 +21,10 @@
+     src/main.cpp
+     src/crash_report.cpp
+     # TRG Launcher 2.0 game side (third_party/trg-launcher/launcher2/game_side)
+     src/launcher/input_hook.cpp
++    src/launcher/native_input_map.cpp
++    src/launcher/native_input_win.cpp
+     src/launcher/return_to_launcher.cpp
+     src/launcher/game_window.cpp
+ )
+ 
+@@ -35,8 +37,42 @@
+ endif()
+ 
+ rexglue_setup_target(incredible_hulk GPU_PLUGINS xenos)
+ 
++# Optional native renderer integration. The supplied ZIP contains NativeXRenderer's sources,
++# but not its DiligentCore submodule or the required ReXGlue recomp SDK. Build remains
++# on Xenos until the Hulk-specific XDK profile is mapped and verified.
++option(HULK_WITH_NATIVE_X "Link NativeXRenderer only; Vulkan is not enabled until Hulk profile is verified" OFF)
++set(HULK_NATIVE_X_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native_x_renderer" CACHE PATH
++    "Complete NativeXRenderer source tree, with recursively initialized submodules")
++if(HULK_WITH_NATIVE_X)
++    if(NOT REXSDK_DIR)
++        message(FATAL_ERROR "HULK_WITH_NATIVE_X requires -DREXSDK_DIR=<rexglue-sdk recomp source tree>")
++    endif()
++    if(NOT EXISTS "${REXSDK_DIR}/RECOMP.md")
++        message(FATAL_ERROR "Expected ElGuslml/rexglue-sdk branch recomp (missing RECOMP.md)")
++    endif()
++    if(NOT EXISTS "${HULK_NATIVE_X_SOURCE_DIR}/CMakeLists.txt")
++        message(FATAL_ERROR "Missing native_x_renderer sources; copy provided NativeXRenderer into native_x_renderer")
++    endif()
++    if(NOT EXISTS "${HULK_NATIVE_X_SOURCE_DIR}/thirdparty/diligent-core/CMakeLists.txt")
++        message(FATAL_ERROR "Missing DiligentCore submodule in native_x_renderer/thirdparty/diligent-core")
++    endif()
++    add_subdirectory("${HULK_NATIVE_X_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hulk_native_x_renderer")
++    target_sources(incredible_hulk PRIVATE src/native_x_renderer_hulk.cpp)
++    target_link_libraries(incredible_hulk PRIVATE native_x_renderer::native_x_renderer)
++    native_x_renderer_copy_runtime(incredible_hulk)
++    target_compile_definitions(incredible_hulk PRIVATE HULK_NATIVE_X_LINKED=1)
++    # NOTE: NativeXRenderer::Initialize is intentionally NOT called until its XDK
++    # device/object layouts and function hooks are verified for Hulk XDK 2.0.6534.
++endif()
++
++# PM4 address evidence only; this never redirects drawing. opt-in developer tool.
++option(HULK_XDK_PM4_PROBE "Log limited hits at candidate XDK PM4 builders" OFF)
++if(HULK_XDK_PM4_PROBE)
++    target_sources(incredible_hulk PRIVATE src/xdk_pm4_probe.cpp)
++endif()
++
+ string(REPLACE "." "," HULK_VERSION_COMMAS "${HULK_VERSION}")
+ target_compile_definitions(incredible_hulk PRIVATE
+     HULK_VERSION="${HULK_VERSION}" HULK_VERSION_COMMAS=${HULK_VERSION_COMMAS},0
+     # Developer aids (HULK_DEV_PAD, HULK_DUMP_IMAGE) only outside release builds.
+--- a/src/incredible_hulk_app.h
++++ b/src/incredible_hulk_app.h
+@@ -11,8 +11,11 @@
+ #include <rex/system/xmemory.h>
+ 
+ namespace hulk {
+ void InstallCrashReport();  // crash_report.cpp
++#if defined(HULK_NATIVE_X_LINKED)
++void NativeXLinkedDiagnostics();  // native_x_renderer_hulk.cpp
++#endif
+ }  // namespace hulk
+ 
+ class IncredibleHulkApp : public rex::ReXApp {
+  public:
+@@ -44,9 +47,14 @@
+     }
+ #endif
+   }
+   // After the runtime's own exception handlers are in place (crash_report.cpp).
+-  void OnPostSetup() override { hulk::InstallCrashReport(); }
++  void OnPostSetup() override {
++    hulk::InstallCrashReport();
++#if defined(HULK_NATIVE_X_LINKED)
++    hulk::NativeXLinkedDiagnostics();
++#endif
++  }
+   // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
+   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
+   // std::unique_ptr<rex::ui::AchievementNotificationDialog>
+   // CreateAchievementNotificationDialog() override;
+--- a/src/launcher/game_window.cpp
++++ b/src/launcher/game_window.cpp
+@@ -21,14 +21,19 @@
+ #include <atomic>
+ #include <cstdint>
+ #include <cstdlib>
+ #include <cstring>
++#include <vector>
+ 
+ #include <rex/cvar.h>
+ 
+ REXCVAR_DECLARE(bool, hulk_from_launcher);  // return_to_launcher.cpp
+ 
+ namespace hulk {
++void NativeInputAttachWindow(void* window);
++void NativeInputToggleCapture();
++bool NativeInputCapturing();
++void NativeInputRawMouse(int dx, int dy);
+ #if defined(_WIN32)
+ namespace {
+ 
+ std::atomic<HWND> g_window{nullptr};
+@@ -36,9 +41,24 @@
+ std::atomic<bool> g_hidden{false};
+ POINT g_last_mouse{-100000, -100000};
+ 
+ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+-  if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT && g_hidden) {
++  if (msg == WM_INPUT && NativeInputCapturing()) {
++    UINT size = 0;
++    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER)) == 0 &&
++        size >= sizeof(RAWINPUTHEADER) && size <= 4096) {
++      std::vector<BYTE> bytes(size);
++      if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lp), RID_INPUT, bytes.data(), &size,
++                          sizeof(RAWINPUTHEADER)) == size) {
++        const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(bytes.data());
++        if (raw->header.dwType == RIM_TYPEMOUSE && !(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE))
++          NativeInputRawMouse(raw->data.mouse.lLastX, raw->data.mouse.lLastY);
++      }
++    }
++  }
++  if (msg == WM_KEYDOWN && wp == VK_F8 && !(lp & (1L << 30)))
++    NativeInputToggleCapture();
++  if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT && (g_hidden || NativeInputCapturing())) {
+     SetCursor(nullptr);
+     return TRUE;
+   }
+   if (msg == WM_MOUSEMOVE) {
+@@ -61,10 +81,18 @@
+ void Attach() {
+   HWND hwnd = nullptr;
+   EnumWindows(&FindOwnWindow, LPARAM(&hwnd));
+   if (!hwnd) return;
+-  g_old_proc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(&WindowProc)));
++  SetLastError(0);
++  auto previous = reinterpret_cast<WNDPROC>(
++      SetWindowLongPtrW(hwnd, GWLP_WNDPROC, LONG_PTR(&WindowProc)));
++  if (!previous) {
++    // Another process/thread may own the chosen window; do not subclass if it fails.
++    return;
++  }
++  g_old_proc = previous;
+   g_window = hwnd;
++  NativeInputAttachWindow(hwnd);
+   static const bool test_background = std::getenv("HULK_TEST_BACKGROUND") != nullptr;
+   if (REXCVAR_GET(hulk_from_launcher) && !test_background) {
+     ShowWindow(hwnd, SW_SHOW);
+     SetForegroundWindow(hwnd);
+@@ -76,9 +104,10 @@
+ 
+ // `pad_used`: a connected controller's buttons or sticks changed since the last poll.
+ void GameWindowTick(bool pad_used) {
+   static uint32_t polls = 0;
+-  if (!g_window) {
++  if (!g_window || !IsWindow(g_window)) {
++    if (!IsWindow(g_window)) g_window = nullptr;
+     if (++polls % 16 == 0) Attach();  // the window appears a little after the game starts polling
+     return;
+   }
+   if (pad_used && !g_hidden) {
+--- a/src/launcher/input_hook.cpp
++++ b/src/launcher/input_hook.cpp
+@@ -38,8 +38,10 @@
+ 
+ void ReturnToLauncherTick(uint32_t user, bool connected, uint16_t buttons);  // return_to_launcher.cpp
+ void GameWindowTick(bool pad_used);                                          // game_window.cpp
+ bool PadChanged(uint32_t user, const uint8_t* state16);                      // game_window.cpp
++bool NativeInputEnabled();
++bool NativeInputApply(uint32_t user, bool real_pad_connected, uint8_t* state);
+ 
+ namespace {
+ std::mutex xam_input_mutex;
+ using XamInputLock = std::lock_guard<std::mutex>;
+@@ -109,8 +111,12 @@
+     __imp__sub_828AA818(ctx, base);
+   }
+   bool connected = ctx.r3.u32 == 0 && state;
+   if (!connected && state) std::memset(base + state, 0, 16);
++  if (user == 0 && state && hulk::NativeInputApply(user, connected, base + state)) {
++    ctx.r3.u64 = 0;  // virtual XInput slot 0 exposed to the guest
++    connected = true;
++  }
+   if (user == 0 && state && hulk::DevPad()) {
+     static uint32_t packet = 0;
+     if (!connected) {
+       ctx.r3.u64 = 0;  // ERROR_SUCCESS: a pad is there
+@@ -141,9 +147,9 @@
+   {
+     hulk::XamInputLock lock(hulk::xam_input_mutex);
+     __imp__sub_828AA808(ctx, base);
+   }
+-  if (user == 0 && caps && ctx.r3.u32 != 0 && hulk::DevPad()) {
++  if (user == 0 && caps && ctx.r3.u32 != 0 && (hulk::DevPad() || hulk::NativeInputEnabled())) {
+     std::memset(base + caps, 0, 20);
+     base[caps] = 1;      // XINPUT_DEVTYPE_GAMEPAD
+     base[caps + 1] = 1;  // XINPUT_DEVSUBTYPE_GAMEPAD
+     ctx.r3.u64 = 0;
+--- /dev/null
++++ b/src/launcher/native_input_map.cpp
+@@ -0,0 +1,49 @@
++#include "native_input_map.h"
++#include <algorithm>
++#include <cmath>
++#include <cstring>
++namespace hulk::input {
++namespace {
++void StoreBE16(uint8_t* data, uint32_t off, uint16_t v) {
++  data[off] = static_cast<uint8_t>(v >> 8);
++  data[off + 1] = static_cast<uint8_t>(v);
++}
++int16_t Axis(int direction) {
++  return static_cast<int16_t>(direction < 0 ? -28000 : direction > 0 ? 28000 : 0);
++}
++int16_t MouseAxis(int32_t delta, float sens) {
++  // Raw Input counts converted to Xbox analog deflection. Not yet a direct camera hook.
++  if (!std::isfinite(sens)) sens = 4.0f;
++  const double value = static_cast<double>(delta) * std::clamp(sens, 0.1f, 20.f) * 80.0;
++  return static_cast<int16_t>(std::clamp(value, -32767.0, 32767.0));
++}
++}
++void ApplyFrame(const Frame& f, uint8_t state[16]) {
++  std::memset(state + 4, 0, 12);
++  const auto pressed = [&](uint32_t bit){ return (f.keys & bit) != 0; };
++  uint16_t buttons = 0;
++  // D-pad arrows: suitable for navigating game menus as well as movement with WASD.
++  if (pressed(Up)) buttons |= 0x0001;
++  if (pressed(Down)) buttons |= 0x0002;
++  if (pressed(Left)) buttons |= 0x0004;
++  if (pressed(Right)) buttons |= 0x0008;
++  if (pressed(Enter)) buttons |= 0x0010; // Start
++  if (pressed(Tab)) buttons |= 0x0020;   // Back
++  if (pressed(MouseMiddle)) buttons |= 0x0080; // Right stick click
++  if (pressed(Q)) buttons |= 0x0100; // LB
++  if (pressed(R)) buttons |= 0x0200; // RB
++  if (pressed(Space)) buttons |= 0x1000; // A
++  if (pressed(E) || pressed(MouseRight)) buttons |= 0x2000; // B
++  if (pressed(MouseLeft)) buttons |= 0x4000; // X
++  if (pressed(F)) buttons |= 0x8000; // Y
++  StoreBE16(state, 4, buttons);
++  state[6] = pressed(Shift) ? 255 : 0;
++  state[7] = pressed(Ctrl) ? 255 : 0;
++  const int x = (pressed(D)?1:0)-(pressed(A)?1:0);
++  const int y = (pressed(W)?1:0)-(pressed(S)?1:0);
++  StoreBE16(state, 8, static_cast<uint16_t>(Axis(x)));
++  StoreBE16(state, 10, static_cast<uint16_t>(Axis(y)));
++  StoreBE16(state, 12, static_cast<uint16_t>(MouseAxis(f.mouse_dx, f.sensitivity)));
++  StoreBE16(state, 14, static_cast<uint16_t>(MouseAxis(-f.mouse_dy, f.sensitivity)));
++}
++}
+--- /dev/null
++++ b/src/launcher/native_input_map.h
+@@ -0,0 +1,21 @@
++// Hulk Native PC: platform-independent keyboard/mouse to Xbox 360 state mapping.
++// The guest XINPUT_STATE is 16 bytes, big endian on Xenon.
++#pragma once
++#include <cstdint>
++namespace hulk::input {
++enum Key : uint32_t {
++  W=1u<<0, A=1u<<1, S=1u<<2, D=1u<<3,
++  Up=1u<<4, Down=1u<<5, Left=1u<<6, Right=1u<<7,
++  Space=1u<<8, E=1u<<9, F=1u<<10, Q=1u<<11, R=1u<<12,
++  Shift=1u<<13, Ctrl=1u<<14, Tab=1u<<15, Enter=1u<<16,
++  MouseLeft=1u<<17, MouseRight=1u<<18, MouseMiddle=1u<<19
++};
++struct Frame {
++  uint32_t keys = 0;
++  int32_t mouse_dx = 0, mouse_dy = 0;
++  float sensitivity = 4.0f;
++};
++// Writes only buttons, triggers and sticks at offsets +4..+15; packet number is caller-owned.
++// Does not access guest memory outside the 16-byte state. Pure and independently testable.
++void ApplyFrame(const Frame& frame, uint8_t state[16]);
++}
+--- /dev/null
++++ b/src/launcher/native_input_win.cpp
+@@ -0,0 +1,120 @@
++// Native Win32 keyboard and raw mouse bridge for the recompiled Hulk's XInput wrapper.
++// Opt in with --hulk_native_mnk=true or HULK_NATIVE_MNK=1. F8 releases/captures mouse.
++// Mouse input is mapped to the camera analog stick; direct camera input is future work.
++#include "native_input_map.h"
++#include <rex/cvar.h>
++#include <atomic>
++#include <cstdlib>
++#include <cstdint>
++#include <cstring>
++#include <algorithm>
++
++#if defined(_WIN32)
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#endif
++
++REXCVAR_DEFINE_BOOL(hulk_native_mnk, false, "Hulk",
++                    "Enable keyboard and Raw Input mouse bridge (Xbox analog-stick emulation)");
++REXCVAR_DEFINE_BOOL(hulk_native_mnk_force, false, "Hulk",
++                    "When enabled, keyboard/mouse is allowed to replace an already connected controller");
++
++namespace hulk {
++namespace {
++std::atomic<bool> g_capture{true};
++std::atomic<int32_t> g_dx{0}, g_dy{0};
++std::atomic<uint32_t> g_packet{0};
++#if defined(_WIN32)
++std::atomic<HWND> g_game_window{nullptr};
++bool Down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
++#endif
++[[maybe_unused]] bool EnvEnabled() {
++  const char* p = std::getenv("HULK_NATIVE_MNK");
++  return p && (*p == '1' || *p == 'y' || *p == 'Y');
++}
++[[maybe_unused]] float Sensitivity() {
++  const char* p = std::getenv("HULK_NATIVE_MOUSE_SENSITIVITY");
++  if (!p) return 4.0f;
++  char* end = nullptr;
++  const float value = std::strtof(p, &end);
++  return end == p ? 4.0f : std::clamp(value, 0.1f, 20.f);
++}
++void StorePacket(uint8_t* state, uint32_t packet) {
++  state[0] = uint8_t(packet >> 24);
++  state[1] = uint8_t(packet >> 16);
++  state[2] = uint8_t(packet >> 8);
++  state[3] = uint8_t(packet);
++}
++}
++bool NativeInputEnabled() {
++#if defined(_WIN32)
++  return EnvEnabled() || REXCVAR_GET(hulk_native_mnk);
++#else
++  return false;
++#endif
++}
++void NativeInputAttachWindow(void* window) {
++#if defined(_WIN32)
++  HWND hwnd = static_cast<HWND>(window);
++  if (!hwnd || !NativeInputEnabled()) return;
++  g_game_window = hwnd;
++  RAWINPUTDEVICE device{};
++  device.usUsagePage = 0x01;
++  device.usUsage = 0x02; // mouse
++  device.dwFlags = 0; // foreground only; retain legacy messages for SDL/other UI
++  device.hwndTarget = hwnd;
++  RegisterRawInputDevices(&device, 1, sizeof(device));
++#else
++  (void)window;
++#endif
++}
++void NativeInputToggleCapture() {
++  g_capture = !g_capture.load();
++  g_dx = 0;
++  g_dy = 0;
++}
++bool NativeInputCapturing() { return g_capture && NativeInputEnabled(); }
++void NativeInputRawMouse(int dx, int dy) {
++  if (!NativeInputCapturing()) return;
++  g_dx.fetch_add(std::clamp(dx,-2000,2000), std::memory_order_relaxed);
++  g_dy.fetch_add(std::clamp(dy,-2000,2000), std::memory_order_relaxed);
++}
++// Called after the real Xam pad read; returns true when a virtual pad was supplied.
++// Does not override a connected physical controller.
++bool NativeInputApply(uint32_t user, bool real_pad_connected, uint8_t* state) {
++  if (user != 0 || !NativeInputEnabled() || !state) return false;
++  // The SDK can expose its own keyboard-as-XInput device (mnk_mode=true). In that case
++  // Xam reports a connected pad and the previous bridge silently did nothing.
++  // Do not override a physical controller unless the user opts in explicitly.
++  if (real_pad_connected && !REXCVAR_GET(hulk_native_mnk_force)) return false;
++  input::Frame f{};
++#if defined(_WIN32)
++  HWND hwnd = g_game_window;
++  const bool focused = hwnd && GetForegroundWindow() == hwnd;
++  if (focused && g_capture) {
++    const auto add = [&](int vk, uint32_t k) { if (Down(vk)) f.keys |= k; };
++    add('W',input::W); add('A',input::A); add('S',input::S); add('D',input::D);
++    add(VK_UP,input::Up); add(VK_DOWN,input::Down); add(VK_LEFT,input::Left); add(VK_RIGHT,input::Right);
++    add(VK_SPACE,input::Space); add('E',input::E); add('F',input::F);
++    add('Q',input::Q); add('R',input::R);
++    add(VK_SHIFT,input::Shift); add(VK_CONTROL,input::Ctrl);
++    add(VK_TAB,input::Tab); add(VK_RETURN,input::Enter);
++    add(VK_LBUTTON,input::MouseLeft); add(VK_RBUTTON,input::MouseRight); add(VK_MBUTTON,input::MouseMiddle);
++    f.mouse_dx = g_dx.exchange(0);
++    f.mouse_dy = g_dy.exchange(0);
++    f.sensitivity = Sensitivity();
++  } else {
++    g_dx = 0;
++    g_dy = 0;
++  }
++#endif
++  input::ApplyFrame(f, state);
++  StorePacket(state, ++g_packet);
++  return true;
++}
++} // namespace hulk
+--- /dev/null
++++ b/src/native_x_renderer_hulk.cpp
+@@ -0,0 +1,13 @@
++// NativeXRenderer link-stage bridge for The Incredible Hulk (XDK 2.0.6534).
++// Do not enable GPU replacement until the game's actual D3D entry points and
++// guest object layouts have been verified against frame traces.
++#include <native_x_renderer/native_x_renderer.h>
++#include <rex/logging.h>
++
++namespace hulk {
++void NativeXLinkedDiagnostics() {
++  // This is game metadata, not a validated NativeXRenderer::Profile.
++  REXLOG_INFO("Hulk NativeXRenderer library linked: {}", native_x_renderer::Describe());
++  REXLOG_INFO("Hulk XDK 2.0.6534 profile incomplete; native drawing remains disabled, Xenos is active");
++}
++} // namespace hulk
+--- /dev/null
++++ b/src/xdk_pm4_probe.cpp
+@@ -0,0 +1,27 @@
++// Non-invasive instrumentation for the PM4 candidates recovered from the user's
++// recompilation binary. These are NOT yet confirmed D3D entry-point identities.
++// Enable only in a developer build: -DHULK_XDK_PM4_PROBE=ON
++// Original functions ALWAYS run; this does not implement Vulkan drawing.
++#include <atomic>
++#include <rex/hook.h>
++#include <rex/logging.h>
++
++#define HULK_PM4_PROBE(address)                                 \
++  REX_EXTERN(__imp__sub_##address);                             \
++  REX_HOOK_RAW(sub_##address) {                                 \
++    static std::atomic<uint32_t> calls{0};                      \
++    uint32_t n = calls.fetch_add(1, std::memory_order_relaxed); \
++    if (n < 24) {                                               \
++      REXLOG_INFO("[Hulk PM4 probe] 0x" #address                 \
++                  " sample {} r3={:08X} r4={:08X} r5={:08X}", \
++                  n, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);        \
++    }                                                          \
++    __imp__sub_##address(ctx, base);                            \
++  }
++
++// Strong candidate builders, not assumed to be specific XDK Draw* APIs.
++HULK_PM4_PROBE(8289D888)
++HULK_PM4_PROBE(8289F720)
++HULK_PM4_PROBE(8289D730)
++HULK_PM4_PROBE(8289F5C8)
++HULK_PM4_PROBE(8289A1F8)
+--- /dev/null
++++ b/tests/CMakeLists.txt
+@@ -0,0 +1,6 @@
++cmake_minimum_required(VERSION 3.25)
++project(HulkNativeInputTests LANGUAGES CXX)
++enable_testing()
++add_executable(hulk_input_test native_input_map_test.cpp ../src/launcher/native_input_map.cpp)
++target_compile_features(hulk_input_test PRIVATE cxx_std_23)
++add_test(NAME native_input_map COMMAND hulk_input_test)
+--- /dev/null
++++ b/tests/native_input_map_test.cpp
+@@ -0,0 +1,31 @@
++#include "../src/launcher/native_input_map.h"
++#include <array>
++#include <cstdlib>
++#include <iostream>
++#define CHECK(x) do { if (!(x)) { std::cerr << "FAIL: " #x << " at line " << __LINE__ << "\n"; std::exit(1); } } while (0)
++#include <cstdint>
++using namespace hulk::input;
++static int16_t be(const std::array<uint8_t,16>& s, int at) {
++ return static_cast<int16_t>((s[at]<<8)|s[at+1]);
++}
++int main() {
++ std::array<uint8_t,16> s{};
++ s.fill(0xCC);
++ ApplyFrame({}, s.data());
++ CHECK(s[0]==0xCC && s[3]==0xCC); // caller's packet stays untouched
++ for(int i=4;i<16;i++) CHECK(s[i]==0);
++ Frame f{}; f.keys=W|D|Space|MouseLeft|Up|Shift|Ctrl|Enter;
++ f.mouse_dx=5; f.mouse_dy=-3; f.sensitivity=4;
++ ApplyFrame(f,s.data());
++ CHECK(be(s,4)==static_cast<int16_t>(0x5011)); // X+A+Start+Dpad up
++ CHECK(s[6]==255 && s[7]==255);
++ CHECK(be(s,8)>0 && be(s,10)>0 && be(s,12)>0 && be(s,14)>0);
++ f.keys=A|S|Left|Down|MouseRight|Tab;
++ f.mouse_dx=-10000; f.mouse_dy=10000;
++ ApplyFrame(f,s.data());
++ CHECK(be(s,4)==static_cast<int16_t>(0x2026));
++ CHECK(be(s,8)<0 && be(s,10)<0 && be(s,12)==-32767 && be(s,14)==-32767);
++ f.keys=W|S|A|D;
++ ApplyFrame(f,s.data()); CHECK(be(s,8)==0 && be(s,10)==0);
++ return 0;
++}
