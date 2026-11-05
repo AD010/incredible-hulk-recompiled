@@ -21,12 +21,15 @@ jobs:
         winget install --id LLVM.LLVM --silent --accept-package-agreements --accept-source-agreements
         echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
 
-    - name: Download ReXGlue SDK Manually
+    - name: Download and Init ReXGlue SDK Submodules
       run: |
         if (!(Test-Path "thirdparty/rexglue-sdk")) {
             mkdir thirdparty -Force
             git clone https://github.com/rexglue/rexglue-sdk.git thirdparty/rexglue-sdk
         }
+        cd thirdparty/rexglue-sdk
+        git submodule update --init --recursive
+        cd ../..
 
     - name: Configure CMake with Ninja
       run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
