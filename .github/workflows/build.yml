@@ -28,19 +28,17 @@ jobs:
             git clone https://github.com/rexglue/rexglue-sdk.git thirdparty/rexglue-sdk
         }
 
-    - name: Configure CMake
-      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
+    - name: Configure CMake with Ninja
+      run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
 
     - name: Build Project
-      run: cmake --build build --config Release --parallel
+      run: cmake --build build --parallel
 
     - name: Upload Release Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: Hulk-NativePC-Release-v0.4
         path: |
-          build/Release/*.exe
-          build/Release/*.dll
           build/**/*.exe
           build/**/*.dll
           *.toml
