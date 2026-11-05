@@ -16,12 +16,15 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    - name: Init Submodules explicitly
+    - name: Download ReXGlue SDK Manually
       run: |
-        git submodule update --init --recursive --force
+        if (!(Test-Path "thirdparty/rexglue-sdk")) {
+            mkdir thirdparty -Force
+            git clone https://github.com/rexglue/rexglue-sdk.git thirdparty/rexglue-sdk
+        }
 
     - name: Configure CMake
-      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
 
     - name: Build Project
       run: cmake --build build --config Release --parallel
@@ -32,6 +35,10 @@ jobs:
         name: Hulk-NativePC-Release-v0.4
         path: |
           build/Release/*.exe
+          build/Release/*.dll
+          build/**/*.exe
+          build/**/*.dll
+          *.toml
           build/Release/*.dll
           build/**/*.exe
           build/**/*.dll
