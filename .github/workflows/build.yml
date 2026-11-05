@@ -1,4 +1,4 @@
-name: Build Hulk Native PC
+name: Build Hulk Native PC v0.4
 
 on:
   push:
@@ -16,9 +16,8 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    - name: Force pull submodules
+    - name: Init Submodules explicitly
       run: |
-        git submodule sync
         git submodule update --init --recursive --force
 
     - name: Configure CMake
@@ -30,7 +29,7 @@ jobs:
     - name: Upload Release Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: Hulk-NativePC-Release-v0.3
+        name: Hulk-NativePC-Release-v0.4
         path: |
           build/Release/*.exe
           build/Release/*.dll
