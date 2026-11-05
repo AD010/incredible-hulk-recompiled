@@ -24,6 +24,7 @@ set(INCREDIBLEHULK_SOURCES
     src/launcher/input_hook.cpp
     src/launcher/native_input_map.cpp
     src/launcher/native_input_win.cpp
+    src/launcher/native_camera_direct.cpp
     src/launcher/return_to_launcher.cpp
     src/launcher/game_window.cpp
 )
@@ -38,32 +39,37 @@ endif()
 
 rexglue_setup_target(incredible_hulk GPU_PLUGINS xenos)
 
-# Optional native renderer integration. The supplied ZIP contains NativeXRenderer's sources,
-# but not its DiligentCore submodule or the required ReXGlue recomp SDK. Build remains
-# on Xenos until the Hulk-specific XDK profile is mapped and verified.
-option(HULK_WITH_NATIVE_X "Link NativeXRenderer only; Vulkan is not enabled until Hulk profile is verified" OFF)
-set(HULK_NATIVE_X_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native_x_renderer" CACHE PATH
-    "Complete NativeXRenderer source tree, with recursively initialized submodules")
+# Native Vulkan renderer integration (NativeXRenderer + validated game-specific XDK profile).
+# The bridge is real, unlike the old v0.2 link-only stub: profile loading,
+# dynamic call binding and Initialize() are wired in. The GPU path cannot be
+# enabled until Hulk's actual XDK 6534 layouts and entrypoints are known.
+option(HULK_WITH_NATIVE_X "Compile native Vulkan renderer and runtime XDK hook bridge" OFF)
+set(HULK_NATIVE_X_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native_x_renderer" CACHE PATH "Full renderer source")
 if(HULK_WITH_NATIVE_X)
-    if(NOT REXSDK_DIR)
-        message(FATAL_ERROR "HULK_WITH_NATIVE_X requires -DREXSDK_DIR=<rexglue-sdk recomp source tree>")
-    endif()
-    if(NOT EXISTS "${REXSDK_DIR}/RECOMP.md")
-        message(FATAL_ERROR "Expected ElGuslml/rexglue-sdk branch recomp (missing RECOMP.md)")
-    endif()
-    if(NOT EXISTS "${HULK_NATIVE_X_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR "Missing native_x_renderer sources; copy provided NativeXRenderer into native_x_renderer")
+    if(NOT REXSDK_DIR OR NOT EXISTS "${REXSDK_DIR}/RECOMP.md")
+        message(FATAL_ERROR "NativeX requires the ElGuslml/rexglue-sdk recomp branch")
     endif()
     if(NOT EXISTS "${HULK_NATIVE_X_SOURCE_DIR}/thirdparty/diligent-core/CMakeLists.txt")
-        message(FATAL_ERROR "Missing DiligentCore submodule in native_x_renderer/thirdparty/diligent-core")
+        message(FATAL_ERROR "NativeX DiligentCore submodule is absent")
     endif()
+    if(HULK_XDK_PM4_PROBE)
+        message(FATAL_ERROR "HULK_XDK_PM4_PROBE conflicts with native dynamic hooks; use one mode at a time")
+    endif()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(_hulk_hooks "${CMAKE_CURRENT_BINARY_DIR}/generated/hulk_native_x_hooks.cpp")
+    add_custom_command(OUTPUT "${_hulk_hooks}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_native_x_hooks.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native_hook_addresses.txt"
+            "${CMAKE_CURRENT_SOURCE_DIR}/analysis/guest_host_mapping.csv" "${_hulk_hooks}"
+        DEPENDS tools/gen_native_x_hooks.py native_hook_addresses.txt analysis/guest_host_mapping.csv
+        VERBATIM COMMENT "Generate guest-function NativeX hook wrappers")
     add_subdirectory("${HULK_NATIVE_X_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/hulk_native_x_renderer")
-    target_sources(incredible_hulk PRIVATE src/native_x_renderer_hulk.cpp)
+    target_sources(incredible_hulk PRIVATE src/native_x_renderer_hulk.cpp
+        src/native_x_hulk_profile.cpp "${_hulk_hooks}")
     target_link_libraries(incredible_hulk PRIVATE native_x_renderer::native_x_renderer)
+    target_include_directories(incredible_hulk PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     native_x_renderer_copy_runtime(incredible_hulk)
     target_compile_definitions(incredible_hulk PRIVATE HULK_NATIVE_X_LINKED=1)
-    # NOTE: NativeXRenderer::Initialize is intentionally NOT called until its XDK
-    # device/object layouts and function hooks are verified for Hulk XDK 2.0.6534.
 endif()
 
 # PM4 address evidence only; this never redirects drawing. opt-in developer tool.

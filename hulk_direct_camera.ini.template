@@ -1,0 +1,10 @@
+# NOT READY for gameplay: the actual Hulk camera pointer and its yaw/pitch fields
+# must be identified from the game's camera-update logic before filling this file.
+# Copy ONLY after verifying all offsets. Default: disabled, XInput bridge unchanged.
+# pointer_slot = 0x........  # big-endian guest pointer to current camera object
+# yaw_offset = 0x...
+# pitch_offset = 0x...
+# radians_per_count = 0.002
+# pitch_min = -1.4
+# pitch_max = 1.4
+# invert_y = 0

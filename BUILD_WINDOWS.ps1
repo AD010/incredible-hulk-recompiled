@@ -1,4 +1,4 @@
-# Build Hulk Native PC from sources on Windows. Does NOT enable Vulkan drawing.
+# Build Hulk Native PC from sources on Windows. Native Vulkan needs an identified Hulk XDK profile.
 # Usage: BUILD_WINDOWS.cmd -GameRoot "E:\Games\IncredibleHulk\games\incredible_hulk\game"
 param(
   [string]$GameRoot = "",
@@ -77,7 +77,8 @@ try {
   if ($InputProbe) { $cmakeArgs += '-DHULK_GAME_INPUT_PROBE=ON' }
   else { $cmakeArgs += '-DHULK_GAME_INPUT_PROBE=OFF' }
   if ($NativeXLink) {
-    # Linking does NOT enable Vulkan. No unverified XDK hooks are activated.
+    # NativeGPU requires a validated sidecar profile before guest rendering changes.
+    if ($Pm4Probe) { throw 'Choose -NativeXLink or -Pm4Probe, not both' }
     $NxrFull = Join-Path $Source 'native_x_renderer_git'
     if (-not (Test-Path (Join-Path $NxrFull 'thirdparty\diligent-core\CMakeLists.txt'))) {
       if (Test-Path $NxrFull) { throw "Incomplete renderer directory: $NxrFull (delete it to retry)" }
@@ -121,7 +122,11 @@ New-Item -ItemType Directory -Force -Path $user | Out-Null
   $cmd = '@echo off' + "`r`n" + 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0RUN_HULK_NATIVE.ps1"' + "`r`n" + 'pause' + "`r`n"
   [IO.File]::WriteAllText((Join-Path $Deliver 'RUN_HULK_NATIVE.cmd'), $cmd, [Text.Encoding]::ASCII)
   Write-Host "SUCCESS: $Deliver"
-  if ($NativeXLink) { Write-Host 'NativeXRenderer was linked only; drawing still uses Xenos.' }
+  if ($NativeXLink) {
+    Copy-Item (Join-Path $Source 'hulk_native_x_profile.ini.template') $Deliver -Force
+    Copy-Item (Join-Path $Source 'hulk_direct_camera.ini.template') $Deliver -Force
+    Write-Host 'NativeXRenderer integrated. Vulkan requires a VERIFIED hulk_native_x_profile.ini and --native_x_renderer=true.'
+  }
   Write-Host 'Test by launching RUN_HULK_NATIVE.cmd; this build has not been game-tested.'
   try { Stop-Transcript | Out-Null } catch {}
   exit 0

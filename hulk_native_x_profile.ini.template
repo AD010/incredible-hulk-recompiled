@@ -1,0 +1,24 @@
+# Hulk XDK 2.0.6534. NOT A WORKING PROFILE: strict parser rejects unknown offsets.
+# Populate only after verifying device layout and call signatures via codegen/traces.
+[profile]
+game=The Incredible Hulk (2008)
+xdk_version=2.0.6534
+output_width=1280
+output_height=720
+
+[device]
+# Required fields: vs_constants_dirty, ps_constants_dirty, fetch_constants_dirty,
+# fetch_dirty_slot0_bit, command_buffer_write, fetch_constants, vs_float_constants,
+# ps_float_constants, bool_loop_constants, render_targets.
+
+[objects]
+# Required: texture_fetch, surface_info, surface_color_depth_info,
+# surface_size, surface_width_minus_one=shift,bits,
+# surface_height_minus_one=shift,bits.
+
+[registers]
+# group_0=offset,register,count ; the complete shadow register groups from XDK
+
+[hooks]
+# 0xXXXXXXXX=DrawIndexedVertices etc. Guest address MUST also be listed in native_hook_addresses.txt
+# Required at least one Draw, Present, Resolve, SetRenderTarget and SetTexture.
