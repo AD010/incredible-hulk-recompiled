@@ -14,14 +14,13 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: recursive
-        fetch-depth: 0
 
     - name: Init Submodules explicitly
       run: |
         git submodule update --init --recursive
 
     - name: Configure CMake
-      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
 
     - name: Build Project
       run: cmake --build build --config Release --parallel
