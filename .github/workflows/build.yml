@@ -16,6 +16,11 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
+    - name: Install LLVM/Clang
+      run: |
+        winget install --id LLVM.LLVM --silent --accept-package-agreements --accept-source-agreements
+        echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
+
     - name: Download ReXGlue SDK Manually
       run: |
         if (!(Test-Path "thirdparty/rexglue-sdk")) {
@@ -24,7 +29,7 @@ jobs:
         }
 
     - name: Configure CMake
-      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
+      run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DREXSDK_DIR="${{ github.workspace }}/thirdparty/rexglue-sdk"
 
     - name: Build Project
       run: cmake --build build --config Release --parallel
@@ -35,10 +40,6 @@ jobs:
         name: Hulk-NativePC-Release-v0.4
         path: |
           build/Release/*.exe
-          build/Release/*.dll
-          build/**/*.exe
-          build/**/*.dll
-          *.toml
           build/Release/*.dll
           build/**/*.exe
           build/**/*.dll
